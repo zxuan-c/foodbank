@@ -5,6 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>鮮度管理 | 家用食材庫存 (Supabase版)</title>
     
+    <!-- iOS / PWA 專用設定 (新增部分) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="食材庫">
+    <meta name="theme-color" content="#ECFCCB">
+    
+    <!-- App Icon: 使用 placeholder 生成符合主題色的圖示，您可以換成自己的圖片 URL -->
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/84CC16/ffffff.png?text=Food&font=roboto">
+    <link rel="icon" href="https://placehold.co/180x180/84CC16/ffffff.png?text=Food&font=roboto">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Vue.js 3 -->
@@ -21,6 +31,8 @@
             font-family: 'Noto Sans TC', sans-serif;
             -webkit-tap-highlight-color: transparent;
             background-color: #ECFCCB; /* Lime 100 - 更清新的背景 */
+            /* iOS 全螢幕時避免頂部留白 */
+            padding-top: env(safe-area-inset-top);
         }
         /* 隱藏滾動條但保留功能 */
         .hide-scrollbar::-webkit-scrollbar {
@@ -67,7 +79,7 @@
             <div>
                 <h1 class="text-2xl font-bold text-gray-800 flex items-center">
                     <span class="text-primary mr-2"><i class="fa-solid fa-leaf"></i></span>
-                    噓噓管理的食材庫
+                    我的食材庫
                 </h1>
                 <div class="flex items-center space-x-2 mt-1">
                     <p class="text-sm text-gray-500">{{ currentDate }}</p>
