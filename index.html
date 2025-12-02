@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>鮮度管理 | 家用食材庫存 (Supabase版)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            background-color: #ECFCCB; /* Lime 100 - 更清新的背景 */
+        }
+        /* 隱藏滾動條但保留功能 */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .active-scale:active {
+            transform: scale(0.95);
+            transition: transform 0.1s;
+        }
+        /* Vue Transitions */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+        .fade-enter-from, .fade-leave-to { opacity: 0; }
+        
+        .slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s ease-out; }
+        .slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        // 改為黃綠色系
+                        primary: '#84CC16', // Lime 500
+                        'primary-dark': '#65A30D', // Lime 600
+                        'primary-light': '#D9F99D', // Lime 200
+                        secondary: '#0EA5E9', // Sky 500
+                        surface: '#FFFFFF',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="text-gray-800 antialiased h-screen overflow-hidden flex flex-col">
+
+    <div id="app" class="h-full flex flex-col max-w-md mx-auto bg-gray-50 shadow-2xl relative overflow-hidden">
+        
+        <!-- Header -->
+        <header class="px-6 pt-10 pb-4 bg-white shadow-sm z-10 flex justify-between items-center relative">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-800 flex items-center">
+                    <span class="text-primary mr-2"><i class="fa-solid fa-leaf"></i></span>
+                    噓噓管理的食材庫
+                </h1>
+                <div class="flex items-center space-x-2 mt-1">
+                    <p class="text-sm text-gray-500">{{ currentDate }}</p>
+                    <!-- 連線狀態燈號 -->
+                    <span v-if="supabaseClient" class="flex h-2 w-2 relative">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                    </span>
+                    <span v-else class="h-2 w-2 rounded-full bg-gray-300" title="未連線"></span>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <!-- 設定按鈕 -->
+                <button @click="openSettings" class="w-10 h-10 rounded-full bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-primary transition-colors flex items-center justify-center active-scale">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+                <!-- 總數顯示 -->
+                <div class="w-10 h-10 rounded-full bg-primary-light flex items-center justify-center text-primary-dark font-bold shadow-inner">
+                    {{ totalItems }}
+                </div>
+            </div>
+        </header>
+
+        <!-- Category Filters -->
+        <div class="px-4 py-4 overflow-x-auto hide-scrollbar flex space-x-3 bg-white/60 backdrop-blur-md sticky top-0 z-10">
+            <button 
+                v-for="cat in categories" 
+                :key="cat.id"
+                @click="currentFilter = cat.id"
+                :class="[
+                    'px-5 py-2 rounded-full text-sm font-medium transition-all shadow-sm active-scale whitespace-nowrap border',
+                    currentFilter === cat.id 
+                        ? 'bg-primary text-white border-primary shadow-lg shadow-primary/30' 
+                        : 'bg-white text-gray-600 border-gray-200'
+                ]"
+            >
+                <i :class="cat.icon + ' mr-1'"></i> {{ cat.name }}
+            </button>
+        </div>
+
+        <!-- Inventory List -->
+        <main class="flex-1 overflow-y-auto px-4 pb-24 hide-scrollbar space-y-4 relative">
+            
+            <!-- Loading State -->
+            <div v-if="loading" class="absolute inset-0 flex items-center justify-center bg-white/50 z-20">
+                <i class="fa-solid fa-circle-notch fa-spin text-3xl text-primary"></i>
+            </div>
+
+            <!-- Empty State -->
+            <div v-if="!loading && filteredItems.length === 0" class="flex flex-col items-center justify-center h-64 text-gray-400">
+                <div v-if="!supabaseClient && items.length === 0" class="text-center px-6">
+                    <i class="fa-solid fa-database text-4xl mb-4 text-gray-300"></i>
+                    <p class="mb-2">尚未連結資料庫</p>
+                    <button @click="openSettings" class="text-primary font-bold underline">設定 Supabase</button>
+                    <p class="text-xs mt-2 text-gray-400">或直接新增使用本地模式</p>
+                </div>
+                <div v-else class="text-center">
+                    <i class="fa-solid fa-basket-shopping text-6xl mb-4 text-gray-200"></i>
+                    <p>目前沒有{{ getCategoryName(currentFilter) }}庫存</p>
+                    <button @click="openModal" class="mt-4 text-primary font-medium text-sm">點擊新增第一筆資料</button>
+                </div>
+            </div>
+
+            <!-- Items -->
+            <div 
+                v-for="item in filteredItems" 
+                :key="item.id"
+                class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between transition-all hover:shadow-md hover:border-primary-light"
+            >
+                <!-- Icon & Info -->
+                <div class="flex items-center space-x-4 flex-1 overflow-hidden">
+                    <div :class="[
+                        'w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner shrink-0',
+                        getCategoryColorBg(item.category)
+                    ]">
+                        <span class="text-2xl">{{ getCategoryEmoji(item.category) }}</span>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="font-bold text-gray-800 text-lg truncate">{{ item.name }}</h3>
+                        <div class="flex items-center text-xs text-gray-500 space-x-2 mt-1">
+                            <span class="bg-gray-100 px-2 py-0.5 rounded text-gray-600 whitespace-nowrap">
+                                <i class="fa-regular fa-calendar mr-1"></i>{{ formatDate(item.date) }}
+                            </span>
+                            <span v-if="isOld(item.date)" class="text-orange-600 font-bold bg-orange-100 px-2 py-0.5 rounded whitespace-nowrap">
+                                盡快食用
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex flex-col items-end space-y-2 ml-2">
+                    <div class="flex items-center bg-gray-50 rounded-lg p-1 border border-gray-200">
+                        <button @click="updateQuantity(item, -1)" class="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-gray-600 active:bg-gray-100 active-scale">
+                            <i class="fa-solid fa-minus text-xs"></i>
+                        </button>
+                        <span class="w-8 text-center font-bold text-gray-700 text-sm">{{ item.quantity }}</span>
+                        <button @click="updateQuantity(item, 1)" class="w-8 h-8 flex items-center justify-center bg-white rounded shadow-sm text-primary active:bg-green-50 active-scale">
+                            <i class="fa-solid fa-plus text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Delete -->
+                <button @click="deleteItem(item.id)" class="ml-3 text-gray-300 hover:text-danger transition-colors p-2 shrink-0">
+                    <i class="fa-solid fa-trash-can"></i>
+                </button>
+            </div>
+        </main>
+
+        <!-- Floating Action Button (FAB) -->
+        <button 
+            @click="openModal"
+            class="absolute bottom-6 right-6 w-14 h-14 bg-primary text-white rounded-full shadow-[0_10px_20px_-5px_rgba(132,204,22,0.5)] flex items-center justify-center text-2xl active-scale hover:bg-primary-dark z-20 transition-all hover:rotate-90 duration-300"
+        >
+            <i class="fa-solid fa-plus"></i>
+        </button>
+
+        <!-- Add Item Modal -->
+        <div v-if="showModal" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+            <transition name="fade" appear>
+                <div @click="closeModal" class="absolute inset-0 bg-black/40 backdrop-blur-sm"></div>
+            </transition>
+
+            <transition name="slide-up" appear>
+                <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl p-6 relative z-10 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.3)]">
+                    <div class="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+                    <h2 class="text-xl font-bold mb-6 text-gray-800">入庫登記</h2>
+
+                    <form @submit.prevent="addItem" class="space-y-5">
+                        <!-- Category Selection -->
+                        <div class="grid grid-cols-3 gap-3">
+                            <div 
+                                v-for="cat in categories.slice(1)" 
+                                :key="cat.id"
+                                @click="newItem.category = cat.id"
+                                :class="[
+                                    'cursor-pointer rounded-xl p-3 text-center border-2 transition-all',
+                                    newItem.category === cat.id 
+                                        ? 'border-primary bg-primary-light/20 text-primary-dark' 
+                                        : 'border-transparent bg-gray-50 text-gray-400 grayscale'
+                                ]"
+                            >
+                                <div class="text-2xl mb-1">{{ cat.emoji }}</div>
+                                <div class="text-xs font-bold">{{ cat.name }}</div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">食材名稱</label>
+                            <input 
+                                v-model="newItem.name" 
+                                type="text" 
+                                placeholder="例如：酪梨、鮭魚" 
+                                required
+                                ref="nameInput"
+                                class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-300"
+                            >
+                        </div>
+
+                        <div class="flex space-x-4">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">數量</label>
+                                <div class="flex items-center bg-gray-50 rounded-xl border border-gray-200 px-1">
+                                    <button type="button" @click="newItem.quantity > 1 ? newItem.quantity-- : null" class="p-3 text-gray-400 hover:text-gray-600"><i class="fa-solid fa-minus"></i></button>
+                                    <input v-model.number="newItem.quantity" type="number" min="1" class="w-full text-center bg-transparent font-bold text-lg focus:outline-none">
+                                    <button type="button" @click="newItem.quantity++" class="p-3 text-primary hover:text-green-600"><i class="fa-solid fa-plus"></i></button>
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">入庫日期</label>
+                                <input v-model="newItem.date" type="date" required class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-secondary">
+                            </div>
+                        </div>
+
+                        <div class="pt-4 flex space-x-3">
+                            <button type="button" @click="closeModal" class="flex-1 py-3.5 rounded-xl font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 transition-colors">取消</button>
+                            <button type="submit" class="flex-[2] py-3.5 rounded-xl font-bold text-white bg-primary shadow-lg shadow-primary/40 hover:bg-primary-dark active:scale-[0.98] transition-all">確認入庫</button>
+                        </div>
+                    </form>
+                </div>
+            </transition>
+        </div>
+
+        <!-- Settings Modal -->
+        <div v-if="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="showSettings = false" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+            <div class="bg-white w-full max-w-md rounded-2xl p-6 relative z-10 shadow-2xl overflow-y-auto max-h-[90vh]">
+                <h2 class="text-xl font-bold mb-4 flex items-center text-gray-800">
+                    <i class="fa-solid fa-database mr-2 text-secondary"></i> 資料庫設定
+                </h2>
+                <p class="text-sm text-gray-500 mb-4">輸入您的 Supabase 資訊以同步資料。若留空則使用本機儲存。</p>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">Project URL</label>
+                        <input v-model="settings.url" type="text" placeholder="https://xyz.supabase.co" class="w-full bg-gray-50 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">API Key (Anon/Public)</label>
+                        <input v-model="settings.key" type="password" placeholder="eyJhbG..." class="w-full bg-gray-50 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700 mb-1">資料表名稱 (Table Name)</label>
+                        <input v-model="settings.tableName" type="text" placeholder="inventory" class="w-full bg-gray-50 border rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary outline-none">
+                        <p class="text-[10px] text-gray-400 mt-1">若要製作不同 App，請更改此名稱 (例如: books, todos)</p>
+                    </div>
+                    
+                    <div class="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                        <p class="text-xs text-blue-800 font-bold mb-1"><i class="fa-solid fa-info-circle"></i> SQL 建立表格指令</p>
+                        <code class="block text-[10px] bg-white p-2 rounded border border-blue-100 text-gray-600 break-all select-all font-mono">
+                            create table {{ settings.tableName || 'inventory' }} (
+                                id bigint generated by default as identity primary key,
+                                name text,
+                                category text,
+                                quantity int,
+                                date text,
+                                created_at timestamp with time zone default timezone('utc'::text, now())
+                            );
+                        </code>
+                    </div>
+
+                    <div class="flex space-x-3 pt-2">
+                        <button @click="showSettings = false" class="flex-1 py-2 rounded-lg text-gray-500 font-bold hover:bg-gray-100">關閉</button>
+                        <button @click="saveSettings" class="flex-1 py-2 rounded-lg bg-gray-800 text-white font-bold shadow hover:bg-black">儲存並連線</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                // Supabase Client
+                let supabase = null;
+                const supabaseClient = ref(null); // 用於 UI 判斷是否連線
+                const loading = ref(false);
+
+                // 資料狀態
+                const items = ref([]);
+                const currentFilter = ref('all');
+                const showModal = ref(false);
+                const showSettings = ref(false);
+                const nameInput = ref(null);
+                
+                // 設定 (已填入您的專案資訊)
+                const settings = ref({
+                    url: 'https://nrormwhklkytqyrbrdbr.supabase.co',
+                    key: 'sb_publishable_QuvW2VoIHavfZ7RunbOl1A_Fu34ri_D',
+                    tableName: 'inventory' // 預設資料表名稱
+                });
+
+                // 表單預設值
+                const defaultItemState = {
+                    name: '',
+                    category: 'protein',
+                    quantity: 1,
+                    date: new Date().toISOString().split('T')[0]
+                };
+                const newItem = ref({ ...defaultItemState });
+
+                // 分類定義 (加上顏色配置)
+                const categories = [
+                    { id: 'all', name: '全部', icon: 'fa-solid fa-layer-group', emoji: '🏠' },
+                    { id: 'staple', name: '主食', icon: 'fa-solid fa-bowl-rice', emoji: '🍚', colorBg: 'bg-orange-100 text-orange-700' },
+                    { id: 'protein', name: '蛋白質', icon: 'fa-solid fa-drumstick-bite', emoji: '🥩', colorBg: 'bg-red-100 text-red-700' },
+                    { id: 'vegetable', name: '蔬菜', icon: 'fa-solid fa-carrot', emoji: '🥬', colorBg: 'bg-green-100 text-green-700' },
+                ];
+
+                // --- Supabase & Storage Logic ---
+
+                const initSupabase = () => {
+                    // 確保有預設 table name
+                    if (!settings.value.tableName) settings.value.tableName = 'inventory';
+
+                    if (settings.value.url && settings.value.key) {
+                        try {
+                            supabase = window.supabase.createClient(settings.value.url, settings.value.key);
+                            supabaseClient.value = supabase;
+                            console.log("Supabase Client Initialized");
+                            fetchItems();
+                        } catch (e) {
+                            console.error("Supabase init error", e);
+                            alert("Supabase 連線設定有誤");
+                        }
+                    } else {
+                        supabase = null;
+                        supabaseClient.value = null;
+                        // Fallback to local storage using table name as key prefix
+                        const localKey = `foodInventory_${settings.value.tableName}_local`;
+                        const saved = localStorage.getItem(localKey);
+                        if (saved) items.value = JSON.parse(saved);
+                        else items.value = []; // Clear items if switching to a new local table context
+                    }
+                };
+
+                const fetchItems = async () => {
+                    if (!supabase) return;
+                    loading.value = true;
+                    const { data, error } = await supabase
+                        .from(settings.value.tableName)
+                        .select('*')
+                        .order('date', { ascending: false }); // 最新日期在最上面
+                    
+                    if (error) {
+                        console.error('Error fetching:', error);
+                        // 若 table 不存在或錯誤，暫時不處理，避免一直彈窗
+                    } else {
+                        items.value = data || [];
+                    }
+                    loading.value = false;
+                };
+
+                const saveSettings = () => {
+                    localStorage.setItem('supabase_settings', JSON.stringify(settings.value));
+                    initSupabase();
+                    showSettings.value = false;
+                };
+
+                const openSettings = () => {
+                    showSettings.value = true;
+                };
+
+                // 生命周期
+                onMounted(() => {
+                    // 載入設定
+                    const savedSettings = localStorage.getItem('supabase_settings');
+                    if (savedSettings) {
+                        const parsed = JSON.parse(savedSettings);
+                        // 智慧合併：如果 localStorage 裡是空的，就保留程式碼裡的預設值
+                        settings.value.url = parsed.url || settings.value.url;
+                        settings.value.key = parsed.key || settings.value.key;
+                        settings.value.tableName = parsed.tableName || settings.value.tableName;
+                    }
+                    initSupabase();
+                });
+
+                // 本地儲存監聽 (僅當沒有 Supabase 時運作)
+                watch(items, (newVal) => {
+                    if (!supabase) {
+                        const localKey = `foodInventory_${settings.value.tableName}_local`;
+                        localStorage.setItem(localKey, JSON.stringify(newVal));
+                    }
+                }, { deep: true });
+
+
+                // --- CRUD Operations ---
+
+                const addItem = async () => {
+                    if (!newItem.value.name) return;
+                    
+                    if (supabase) {
+                        // Supabase Insert
+                        loading.value = true;
+                        const { data, error } = await supabase
+                            .from(settings.value.tableName)
+                            .insert([{
+                                name: newItem.value.name,
+                                category: newItem.value.category,
+                                quantity: newItem.value.quantity,
+                                date: newItem.value.date
+                            }])
+                            .select();
+
+                        if (error) {
+                            alert('新增失敗: ' + error.message);
+                        } else if (data) {
+                            items.value.unshift(data[0]);
+                            // 重新排序
+                            items.value.sort((a, b) => new Date(b.date) - new Date(a.date));
+                        }
+                        loading.value = false;
+                    } else {
+                        // Local Insert
+                        items.value.unshift({
+                            id: Date.now(),
+                            ...newItem.value
+                        });
+                    }
+                    closeModal();
+                };
+
+                const updateQuantity = async (item, change) => {
+                    const newQty = item.quantity + change;
+                    if (newQty <= 0) {
+                        deleteItem(item.id);
+                        return;
+                    }
+
+                    // Optimistic update (UI first)
+                    const oldQty = item.quantity;
+                    item.quantity = newQty;
+
+                    if (supabase) {
+                        const { error } = await supabase
+                            .from(settings.value.tableName)
+                            .update({ quantity: newQty })
+                            .eq('id', item.id);
+                        
+                        if (error) {
+                            console.error("Update error", error);
+                            item.quantity = oldQty; // Revert on error
+                        }
+                    }
+                };
+
+                const deleteItem = async (id) => {
+                    if(!confirm('確定要刪除這項食材嗎？')) return;
+
+                    // Optimistic delete
+                    const originalItems = [...items.value];
+                    items.value = items.value.filter(i => i.id !== id);
+
+                    if (supabase) {
+                        const { error } = await supabase
+                            .from(settings.value.tableName)
+                            .delete()
+                            .eq('id', id);
+                        
+                        if (error) {
+                            alert('刪除失敗');
+                            items.value = originalItems; // Revert
+                        }
+                    }
+                };
+
+                // --- UI Helpers ---
+
+                const filteredItems = computed(() => {
+                    let list = items.value;
+                    if (currentFilter.value !== 'all') {
+                        list = list.filter(i => i.category === currentFilter.value);
+                    }
+                    return list; // 假設 fetch 時已經排序，或在 insert 時排序
+                });
+
+                const totalItems = computed(() => items.value.length);
+                
+                const currentDate = computed(() => {
+                    const now = new Date();
+                    return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+                });
+
+                const getCategoryName = (id) => categories.find(c => c.id === id)?.name || '';
+                const getCategoryEmoji = (id) => categories.find(c => c.id === id)?.emoji || '📦';
+                const getCategoryColorBg = (id) => categories.find(c => c.id === id)?.colorBg || 'bg-gray-100';
+
+                const formatDate = (dateString) => {
+                    if (!dateString) return '';
+                    const parts = dateString.split('-');
+                    return parts.length === 3 ? `${parts[1]}/${parts[2]}` : dateString;
+                };
+
+                const isOld = (dateString) => {
+                    const itemDate = new Date(dateString);
+                    const now = new Date();
+                    const diffTime = Math.abs(now - itemDate);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+                    return diffDays > 7;
+                };
+
+                const openModal = () => {
+                    newItem.value = { 
+                        ...defaultItemState, 
+                        date: new Date().toISOString().split('T')[0] 
+                    };
+                    showModal.value = true;
+                    nextTick(() => { if(nameInput.value) nameInput.value.focus(); });
+                };
+
+                const closeModal = () => { showModal.value = false; };
+
+                return {
+                    items, filteredItems, categories, currentFilter, showModal, showSettings,
+                    newItem, totalItems, currentDate, nameInput, settings, loading, supabaseClient,
+                    getCategoryName, getCategoryEmoji, getCategoryColorBg, formatDate, isOld,
+                    openModal, closeModal, openSettings, saveSettings,
+                    addItem, deleteItem, updateQuantity
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
