@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>鮮度管理 | 家用食材庫存 (Supabase版)</title>
     
-    <!-- iOS / PWA 專用設定 (新增部分) -->
+    <!-- iOS / PWA 專用設定 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="食材庫">
     <meta name="theme-color" content="#ECFCCB">
     
-    <!-- App Icon: 使用您提供的圖片 -->
+    <!-- App Icon -->
     <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/zxuan-c/foodbank/refs/heads/main/icon2.jpg">
     <link rel="icon" href="https://raw.githubusercontent.com/zxuan-c/foodbank/refs/heads/main/icon2.jpg">
 
@@ -212,20 +212,20 @@
 
                     <form @submit.prevent="addItem" class="space-y-5">
                         <!-- Category Selection -->
-                        <div class="grid grid-cols-3 gap-3">
+                        <div class="grid grid-cols-4 gap-2"> <!-- Modified to grid-cols-4 for better fit -->
                             <div 
                                 v-for="cat in categories.slice(1)" 
                                 :key="cat.id"
                                 @click="newItem.category = cat.id"
                                 :class="[
-                                    'cursor-pointer rounded-xl p-3 text-center border-2 transition-all',
+                                    'cursor-pointer rounded-xl p-2 text-center border-2 transition-all flex flex-col items-center justify-center h-20',
                                     newItem.category === cat.id 
                                         ? 'border-primary bg-primary-light/20 text-primary-dark' 
                                         : 'border-transparent bg-gray-50 text-gray-400 grayscale'
                                 ]"
                             >
                                 <div class="text-2xl mb-1">{{ cat.emoji }}</div>
-                                <div class="text-xs font-bold">{{ cat.name }}</div>
+                                <div class="text-[10px] sm:text-xs font-bold whitespace-nowrap">{{ cat.name }}</div>
                             </div>
                         </div>
 
@@ -234,7 +234,7 @@
                             <input 
                                 v-model="newItem.name" 
                                 type="text" 
-                                placeholder="例如：酪梨、鮭魚" 
+                                placeholder="例如：零食、調味料" 
                                 required
                                 ref="nameInput"
                                 class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all placeholder-gray-300"
@@ -352,6 +352,8 @@
                     { id: 'staple', name: '主食', icon: 'fa-solid fa-bowl-rice', emoji: '🍚', colorBg: 'bg-orange-100 text-orange-700' },
                     { id: 'protein', name: '蛋白質', icon: 'fa-solid fa-drumstick-bite', emoji: '🥩', colorBg: 'bg-red-100 text-red-700' },
                     { id: 'vegetable', name: '蔬菜', icon: 'fa-solid fa-carrot', emoji: '🥬', colorBg: 'bg-green-100 text-green-700' },
+                    // 新增 "其他" 分類 - 使用紫色系
+                    { id: 'other', name: '其他', icon: 'fa-solid fa-box-open', emoji: '📦', colorBg: 'bg-purple-100 text-purple-700' },
                 ];
 
                 // --- Supabase & Storage Logic ---
